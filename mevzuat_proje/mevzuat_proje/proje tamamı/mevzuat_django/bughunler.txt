@@ -1,0 +1,7 @@
+﻿Bughunler notu: 2025-12-19 — RegTech (unit+smoke otomasyonu)
+- regcheck: önce mevzuat_parca unit testleri; PASS ise run_smoke.
+- run_smoke: dashboard ve SPA dashboard payload'ları canonical JSON ile aynı.
+- run_smoke: obligation PATCH true/false; todo/completed ve stats invariant kontrolü.
+- run_smoke: AutoStartServer + StopServerAfter güvenliği (script açtıysa kapatır).
+- Çıktı: smoke_report.json (status=PASS, total_ms=5958, base_url=http://127.0.0.1:8000, company=Test Yazılım A.Ş.).
+

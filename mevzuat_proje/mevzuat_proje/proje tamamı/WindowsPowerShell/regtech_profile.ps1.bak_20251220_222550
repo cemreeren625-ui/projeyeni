@@ -1,0 +1,238 @@
+# =========================
+# RegTech helpers (TEK KAYNAK)
+# File: regtech_profile.ps1
+# =========================
+
+# (Opsiyonel) UTF-8 output
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding = [Console]::OutputEncoding
+
+# Proje kökü (ister global, ister env üzerinden)
+if([string]::IsNullOrWhiteSpace($global:REGTECH_ROOT)){
+  $global:REGTECH_ROOT = "C:\Users\cemre\OneDrive\Desktop\ollamak\mevzuat_django"
+}
+$env:REGTECH_ROOT = $global:REGTECH_ROOT
+
+# RegTech helpers (loaded by profile)
+try { chcp 65001 | Out-Null } catch {}
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding = [Console]::OutputEncoding
+
+function Get-RegTechRoot {
+  if($env:REGTECH_ROOT -and (Test-Path $env:REGTECH_ROOT)){
+    return (Resolve-Path $env:REGTECH_ROOT).Path
+  }
+
+  $guess = "C:\Users\cemre\OneDrive\Desktop\ollamak\mevzuat_django"
+  if(Test-Path $guess){
+    $env:REGTECH_ROOT = (Resolve-Path $guess).Path
+    return $env:REGTECH_ROOT
+  }
+
+  $here = (Get-Location).Path
+  if(Test-Path (Join-Path $here "manage.py")){
+    $env:REGTECH_ROOT = $here
+    return $here
+  }
+
+  throw "RegTech root bulunamadi. Proje klasorune cd yap ya da `$env:REGTECH_ROOT ayarla."
+}
+
+function Use-RegTechRoot {
+  param([Parameter(Mandatory=$true)][scriptblock]$Script)
+  $root = Get-RegTechRoot
+  Push-Location $root
+  try { & $Script } finally { Pop-Location }
+}
+
+function Ensure-RegTechEnv {
+  if([string]::IsNullOrWhiteSpace($env:DJANGO_DEBUG)){ $env:DJANGO_DEBUG = "1" }
+  if([string]::IsNullOrWhiteSpace($env:DJANGO_ALLOWED_HOSTS)){ $env:DJANGO_ALLOWED_HOSTS = "127.0.0.1,localhost" }
+
+  if([string]::IsNullOrWhiteSpace($env:DJANGO_SECRET_KEY)){
+    $code = 'from django.core.management.utils import get_random_secret_key as g; print(g())'
+    $py = Get-Command python -ErrorAction SilentlyContinue
+    if(-not $py){ throw "python bulunamadi. once conda activate dj310 yap." }
+    $sk = & $py.Source -c $code
+    $env:DJANGO_SECRET_KEY = ($sk | Select-Object -First 1).Trim()
+  }
+}
+
+function run_smoke {
+  param(
+    [string]$BaseUrl="http://127.0.0.1:8000",
+    [int]$CompanyId=1,
+    [int]$ObligationId=1,
+    [switch]$AutoStartServer,
+    [switch]$StopServerAfter,
+    [switch]$Quiet,
+    [string]$DumpJsonDir="",
+    [int]$TimeoutMs=3000
+  )
+
+  Use-RegTechRoot {
+    $p = Join-Path (Get-RegTechRoot) "run_smoke.ps1"
+    if(-not (Test-Path $p)){ throw "run_smoke.ps1 bulunamadi: $p" }
+
+    & $p -BaseUrl $BaseUrl -CompanyId $CompanyId -ObligationId $ObligationId `
+        -AutoStartServer:$AutoStartServer -StopServerAfter:$StopServerAfter `
+        -Quiet:$Quiet -DumpJsonDir $DumpJsonDir -TimeoutMs $TimeoutMs
+  }
+}
+
+function Ensure-BughunlerFile {
+  param([string]$Path)
+  if(-not (Test-Path $Path)){
+    "# Bughunler`r`n" | Set-Content -Encoding utf8 -Path $Path
+  }
+}
+
+function Append-BughunlerRegTechSmoke {
+  param(
+    [string]$Path,
+    [string]$Date,
+    [string]$Status,
+    [string]$Company,
+    [string[]]$Lines
+  )
+
+  Ensure-BughunlerFile -Path $Path
+
+  $raw = Get-Content $Path -Raw -Encoding utf8
+  if($null -eq $raw){ $raw = "" }
+  $raw = $raw -replace "`r`n","`n" -replace "`r","`n"
+  $arr = if($raw.Length -gt 0){ $raw -split "`n" } else { @() }
+
+  # Ensure header
+  if($arr.Count -eq 0 -or ($arr[0] -notmatch '^\s*#\s*Bughunler\b')){
+    $arr = @("# Bughunler","") + $arr
+  }
+
+  $dateRx = "^\s*##\s+$([regex]::Escape($Date))\s*$"
+  if(-not ($arr | Where-Object { $_ -match $dateRx })){
+    $arr = $arr + @("","## $Date","")
+  }
+
+  # remove old marker block for same date
+  $markerRx = "^<!--\s*RegTechSmoke\|$([regex]::Escape($Date))\|"
+  $out = New-Object System.Collections.Generic.List[string]
+  $skip = $false
+  foreach($line in $arr){
+    if($line -match $markerRx){ $skip = $true; continue }
+    if($skip){
+      if($line.Trim().StartsWith("-")){ continue }
+      if([string]::IsNullOrWhiteSpace($line)){ continue }
+      $skip = $false
+    }
+    $out.Add($line)
+  }
+  $arr = $out.ToArray()
+
+  # find date header index
+  $idxDate = [Array]::FindIndex($arr, [Predicate[string]]{ param($s) $s -match $dateRx })
+  if($idxDate -lt 0){ $arr = $arr + @("","## $Date",""); $idxDate = $arr.Count - 2 }
+
+  $marker = "<!-- RegTechSmoke|$Date|$Status|$Company -->"
+  $newBlock = @($marker) + ($Lines | ForEach-Object { "- $_" }) + @("")
+  $insertPos = [Math]::Min($idxDate + 2, $arr.Count)
+
+  $arr = @($arr[0..($insertPos-1)]) + @($newBlock) + @($arr[$insertPos..($arr.Count-1)])
+  ($arr -join "`n") | Set-Content -Encoding utf8 -Path $Path
+}
+
+function gunluk_smoke {
+  param(
+    [string]$ReportPath = ".\smoke_report.json",
+    [switch]$CopyToClipboard,
+    [string]$AppendPath = ".\bughunler.md",
+    [switch]$Show
+  )
+
+  if(-not (Test-Path $ReportPath)){ throw "Report yok: $ReportPath" }
+
+  $r = Get-Content $ReportPath -Raw -Encoding utf8 | ConvertFrom-Json
+  $date = (Get-Date).ToString("yyyy-MM-dd")
+  $company = $r.payload.dash.sirket.name
+  if([string]::IsNullOrWhiteSpace($company)){ $company = "?" }
+
+  $total  = if($r.total_ms){ [int]$r.total_ms } else { 0 }
+  $status = if($r.ok){ "PASS" } else { "FAIL" }
+  $base   = if($r.base_url){ $r.base_url } else { "" }
+
+  $clip = @(
+    "Bughunler notu: $date — RegTech (unit+smoke) [$status]",
+    "- Calistirma: regcheck(unit) → run_smoke (AutoStart/Stop guvenli)",
+    "- Dogrulama: dashboard==SPA (canonical JSON) + PATCH true/false + stats invariant",
+    "- Rapor: smoke_report.json (ms=$total, base=$base, company=$company)"
+  )
+  $text = ($clip -join "`n")
+
+  if($CopyToClipboard){ Set-Clipboard -Value $text; Write-Host "[OK] gunluk_smoke: metin panoya kopyalandi" }
+
+  if(-not [string]::IsNullOrWhiteSpace($AppendPath)){
+    $lines = @(
+      "Calistirma: regcheck(unit) → run_smoke (AutoStart/Stop guvenli)",
+      "Dogrulama: dashboard==SPA (canonical JSON)",
+      "Toggle: PATCH true/false; todo/completed + stats invariant",
+      "Rapor: smoke_report.json ($status, ms=$total, base=$base, company=$company)"
+    )
+    Append-BughunlerRegTechSmoke -Path $AppendPath -Date $date -Status $status -Company $company -Lines $lines
+  }
+
+  if($Show){ Write-Host ""; $text }
+}
+
+function regcheck {
+  param(
+    [switch]$AutoStartServer,
+    [switch]$StopServerAfter,
+    [string]$ReportPath = ".\smoke_report.json"
+  )
+
+  Use-RegTechRoot {
+    Ensure-RegTechEnv
+    python manage.py test mevzuat_parca -v 2
+    if($LASTEXITCODE -ne 0){ throw "Unit testler FAIL. Smoke calistirmadim." }
+    run_smoke -AutoStartServer:$AutoStartServer -StopServerAfter:$StopServerAfter -Quiet -DumpJsonDir "" -TimeoutMs 3000
+  }
+}
+
+function regdaily {
+  param(
+    [string]$ReportPath = ".\smoke_report.json",
+    [switch]$CopyToClipboard,
+    [string]$AppendPath = ".\bughunler.md"
+  )
+  regcheck -AutoStartServer -StopServerAfter -ReportPath $ReportPath
+  gunluk_smoke -ReportPath $ReportPath -CopyToClipboard:$CopyToClipboard -AppendPath $AppendPath
+}
+
+function regnote {
+  param(
+    [switch]$CopyToClipboard,
+    [string]$AppendPath = ".\bughunler.md",
+    [switch]$Show,
+    [switch]$Open,
+    [string]$SavePath = ".\last_regnote.txt"
+  )
+
+  Use-RegTechRoot {
+    regdaily -CopyToClipboard:$CopyToClipboard -AppendPath $AppendPath
+    if($Show){ gunluk_smoke -ReportPath ".\smoke_report.json" -Show }
+
+    $note = Get-Clipboard -Raw
+    if(-not [string]::IsNullOrWhiteSpace($note)){
+      $note | Set-Content -Encoding utf8 -Path $SavePath
+      Write-Host "[OK] regnote: not kaydedildi -> $SavePath"
+
+      $archiveDir = ".\notes"
+      if(-not (Test-Path $archiveDir)){ New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null }
+      $stamp = Get-Date -Format "yyyy-MM-dd_HHmm"
+      $archivePath = Join-Path $archiveDir ("regnote_{0}.txt" -f $stamp)
+      $note | Set-Content -Encoding utf8 -Path $archivePath
+      Write-Host "[OK] regnote: arsiv -> $archivePath"
+
+      if($Open){ notepad $SavePath }
+    }
+  }
+}

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <!-- Sayfanın Türkçe olduğunu belirtiyoruz -->
+    <meta charset="UTF-8">
+
+    <!-- Sekmede gözükecek başlık -->
+    <title>Şirketler (SPA)</title>
+
+    <!-- Mobil uyumluluk: responsive tasarım -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS: tablo, buton, spacing gibi hazır stiller -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<!-- Bootstrap ile açık gri arkaplan -->
+<body class="bg-light">
+
+    <!-- İçeriği ortalayan container + yukarı/aşağı padding -->
+    <div class="container py-4">
+
+        <!-- Sayfa başlığı -->
+        <h1 class="mb-3">Şirketler (SPA)</h1>
+
+        <!-- Bootstrap tablo: hover efekti + beyaz arka plan -->
+        <table class="table table-hover bg-white">
+
+            <!-- Tablo başlığı (column headers) -->
+            <thead>
+                <tr>
+                    <th>Şirket</th>
+                    <th class="text-end">İşlemler</th> <!-- sağa hizalı -->
+                </tr>
+            </thead>
+
+            <tbody>
+                <!-- Django template: sirketler listesini döner -->
+                {% for s in sirketler %}
+
+                <!-- Satıra tıklanınca şirketin SPA detay sayfasına gider -->
+                <!-- Örn: /api/companies-spa/12/ -->
+                <tr style="cursor:pointer" onclick="location.href='/api/companies-spa/{{ s.pk }}/'">
+
+                    <!-- Sol hücre: şirket adı + id -->
+                    <td class="fw-semibold">
+                        {{ s.name }} <!-- modeldeki name alanı -->
+                        <div class="text-muted small">ID: {{ s.pk }}</div> <!-- küçük gri id -->
+                    </td>
+
+                    <!-- Sağ hücre: butonlar / işlemler -->
+                    <td class="text-end">
+
+                        <!-- Klasik HTML paneline git butonu -->
+                        <!-- Not: href tıklanınca satırın onclick'ine takılmasın diye aşağıda stopPropagation var -->
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="/api/companies/{{ s.pk }}/dashboard-page/"
+                           onclick="event.stopPropagation();">
+                            HTML Paneli
+                        </a>
+                    </td>
+                </tr>
+
+                <!-- sirketler boşsa burası çalışır -->
+                {% empty %}
+                <tr>
+                    <td colspan="2" class="text-muted">Şirket kaydı yok.</td>
+                </tr>
+
+                <!-- for döngüsü biter -->
+                {% endfor %}
+            </tbody>
+
+        </table>
+    </div>
+</body>
+
+</html>

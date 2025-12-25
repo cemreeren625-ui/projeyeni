@@ -1,0 +1,4 @@
+Bughunler notu: 2025-12-20 — RegTech (unit+smoke) [PASS]
+- Calistirma: regcheck(unit) → run_smoke (AutoStart/Stop guvenli)
+- Dogrulama: dashboard==SPA (canonical JSON) + PATCH true/false + stats invariant
+- Rapor: smoke_report.json (ms=19136, base=http://127.0.0.1:8000, company=Test Yazılım A.Ş.)

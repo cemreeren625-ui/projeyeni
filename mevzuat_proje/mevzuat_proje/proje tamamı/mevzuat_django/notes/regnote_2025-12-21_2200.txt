@@ -1,0 +1,4 @@
+Get-Command reglog, regtodo | Select Name, CommandType, Source
+regtodo -WithRisk
+reglog -Show
+

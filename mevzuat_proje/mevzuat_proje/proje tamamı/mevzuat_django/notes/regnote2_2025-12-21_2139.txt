@@ -1,0 +1,6 @@
+Bughunler notu: 2025-12-21 - RegTech (unit+smoke) [PASS]
+- Calistirma: regcheck(unit) -> run_smoke (AutoStart/Stop guvenli)
+- Dogrulama: dashboard==SPA (canonical JSON) + PATCH true/false + stats invariant
+- Rapor: smoke_report.json (ms=19183, base=http://127.0.0.1:8000, company=Test Yazılım A.Ş.)
+- TODO 1: KDV Genel Tebliği (Seri No: 42) Değişikliği (due=2025-12-13) [risk=high]
+- TODO 2: KOSGEB Dijital Dönüşüm Desteği (due=2025-12-13) [risk=low]

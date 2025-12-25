@@ -1,0 +1,3 @@
+reglog -Show
+gunluk_smoke -Show
+

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <!-- Sayfanın karakter seti -->
+    <meta charset="UTF-8">
+
+    <!-- Tarayıcı sekmesinde görünen başlık -->
+    <title>Şirket Uyum Detayı (SPA)</title>
+
+    <!-- Mobil uyumluluk -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS (hazır UI stilleri için) -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    >
+</head>
+
+<!-- Bootstrap arkaplan rengi -->
+<body class="bg-light">
+
+<!-- Sayfa içerik alanı -->
+<div class="container py-4">
+
+    <!-- Liste sayfasına geri dön linki -->
+    <a href="/api/companies-spa/" class="btn btn-link btn-sm mb-3">
+        ← Şirket listesine dön
+    </a>
+
+    <!-- Sayfa başlığı -->
+    <h1 class="mb-3">
+        Şirket Uyum Detayı (SPA)
+    </h1>
+
+    <!--
+      React uygulamasının "mount" olacağı yer.
+      Django buraya şirket id ve adını data-* attribute olarak basıyor.
+      React JS burada dataset'ten bu bilgileri okuyacak.
+    -->
+    <div id="app"
+         data-company-id="{{ company_id }}"
+         data-company-name="{{ company_name }}">
+    </div>
+
+</div>
+
+<!-- React ve ReactDOM'u CDN ile yüklüyoruz (projeye npm kurmadan) -->
+<script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+
+<script>
+  // React.createElement'i kısa kullanmak için kısaltma
+  const e = React.createElement;
+
+  // React'in render edeceği container div'ini yakala
+  const appContainer = document.getElementById("app");
+
+  // 1) data-company-id değerini dataset'ten alıp sayı yap (ör: "12" -> 12)
+  let companyId = parseInt(appContainer.dataset.companyId, 10);
+
+  // 2) Eğer dataset boş/bozuksa (NaN geldiyse) URL'den id çekmeyi dene (fallback)
+  // Örn: /api/companies-spa/12/ -> 12 yakalanır
+  if (!Number.isFinite(companyId)) {
+    const m = window.location.pathname.match(/companies-spa\/(\d+)/);
+    companyId = m ? parseInt(m[1], 10) : NaN;
+  }
+
+  // Şirket adı dataset'ten gelir; yoksa boş string
+  const companyName = appContainer.dataset.companyName || "";
+
+  // Debug amaçlı console'a basıyoruz (hata ayıklamada çok işe yarar)
+  console.log("RAW data-company-id:", appContainer.dataset.companyId);
+  console.log("companyId:", companyId);
+  console.log("pathname:", window.location.pathname);
+
+  // React fonksiyon component
+  function DetailApp() {
+
+    // Dashboard JSON'u state'te tutulacak
+    const [dashboard, setDashboard] = React.useState(null);
+
+    // Yükleniyor durumunu kontrol eder
+    const [loading, setLoading] = React.useState(true);
+
+    // Hata mesajını tutar
+    const [error, setError] = React.useState(null);
+
+    // Dashboard verisini çeken fonksiyon
+    const loadDashboard = React.useCallback(() => {
+
+      // companyId hala NaN ise fetch atmak yerine hata göster
+      if (!Number.isFinite(companyId)) {
+        setError("companyId alınamadı (NaN). data-company-id veya URL yanlış.");
+        setLoading(false);
+        return;
+      }
+
+      // Yeni fetch öncesi loading true, error temizle
+      setLoading(true);
+      setError(null);
+
+      // Backend’de tanımlı dashboard endpoint
+      const dashboardUrl = `/api/companies/${companyId}/dashboard/`;
+
+      // Dashboard'u çek
+      fetch(dashboardUrl)
+        .then((res) => {
+          // HTTP status 200 değilse hata fırlat
+          if (!res.ok) throw new Error("Dashboard API hata: " + res.status);
+          return res.json();
+        })
+        .then((data) => {
+          console.log("DASHBOARD JSON:", data);  // ✅ bunu ekliyorsun
+          setDashboard(data);
+          setLoading(false);
+        })
+
+        .catch((err) => {
+          // Hata varsa error state'e yaz
+          setError(err.message);
+          setLoading(false);
+        });
+    }, []); // Not: companyId dışarıda sabit olduğu için deps boş kalabiliyor
+
+    // Component ilk açıldığında 1 kez dashboard'u yükle
+    React.useEffect(() => {
+      loadDashboard();
+    }, [loadDashboard]);
+
+    // Bir obligation'ı tamamla / geri al (PATCH isteği)
+    const handleToggleObligation = (obligationId, newValue) => {
+      fetch(`/api/obligations/${obligationId}/status/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        // JSON body: is_compliant true -> tamamla, false -> geri al
+        body: JSON.stringify({ is_compliant: newValue }),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error("Durum API hata: " + res.status);
+          return res.json();
+        })
+        .then(() => {
+          // Patch başarılı olunca dashboard'u yeniden çek (ekran güncellensin)
+          loadDashboard();
+        })
+        .catch((err) => {
+          alert("İşlem sırasında hata: " + err.message);
+        });
+    };
+
+    // Loading durumunda bilgi mesajı
+    if (loading) {
+      return e("div", { className: "alert alert-info" }, "Yükleniyor...");
+    }
+
+    // Hata varsa kırmızı uyarı
+    if (error) {
+      return e("div", { className: "alert alert-danger" }, "Hata: " + error);
+    }
+
+    // Dashboard boşsa basit mesaj
+    if (!dashboard) {
+      return e("div", null, "Veri bulunamadı.");
+    }
+
+    // Skor alanı farklı isimlerle gelirse fallback ile yakala
+    const score = dashboard.uyum_skoru ?? dashboard.score ?? dashboard.uyumSkoru ?? 0;
+
+    // İstatistikler
+    const stats = dashboard.stats || {};
+
+    // Yapılacaklar listesi
+    const todo = dashboard.todo || [];
+
+    // Tamamlananlar listesi
+    const completed = dashboard.completed || [];
+
+    // UI render (React.createElement ile)
+    return e(
+      "div",
+      null,
+
+      // Üst blok: başlık + skor + özet
+      e(
+        "div",
+        { className: "mb-4" },
+        // Şirket adı varsa onu göster, yoksa Şirket #id
+        e("h2", null, companyName || `Şirket #${companyId}`),
+
+        // 2 kolonlu layout
+        e(
+          "div",
+          { className: "row g-3 mt-2" },
+
+          // Sol kolon: skor kartı
+          e(
+            "div",
+            { className: "col-md-4" },
+            e(
+              "div",
+              { className: "card text-center" },
+              e("div", { className: "card-header fw-semibold" }, "Uyum Skoru"),
+              e("div", { className: "card-body display-5" }, score + "/100")
+            )
+          ),
+
+          // Sağ kolon: özet istatistik kartı
+          e(
+            "div",
+            { className: "col-md-8" },
+            e(
+              "div",
+              { className: "card" },
+              e("div", { className: "card-header fw-semibold" }, "Özet"),
+              e(
+                "div",
+                { className: "card-body" },
+                e(
+                  "ul",
+                  { className: "list-unstyled mb-0" },
+                  e("li", null, "Toplam yükümlülük: ", stats.total_obligations ?? "-"),
+                  e("li", null, "Açık yükümlülük: ", stats.open_obligations ?? "-"),
+                  e("li", null, "Gecikmiş yükümlülük: ", stats.overdue_obligations ?? "-")
+                )
+              )
+            )
+          )
+        )
+      ),
+
+      // Alt blok: TODO ve Completed yan yana
+      e(
+        "div",
+        { className: "row g-4" },
+
+        // Sol: Yapılacaklar (uyumsuzlar)
+        e(
+          "div",
+          { className: "col-md-6" },
+          e(
+            "div",
+            { className: "card" },
+            e("div", { className: "card-header fw-semibold" }, "Yapılacaklar Listesi"),
+            e(
+              "div",
+              { className: "card-body" },
+              todo.length === 0
+                ? e("p", { className: "text-muted" }, "Açık yükümlülük yok.")
+                : e(
+                    "ul",
+                    { className: "list-group" },
+                    todo.map((item) =>
+                      e(
+                        "li",
+                        {
+                          key: item.obligation_id,
+                          className:
+                            "list-group-item d-flex justify-content-between align-items-start",
+                        },
+                        // Sol içerik: başlık + detay satırı
+                        e(
+                          "div",
+                          null,
+                          e("div", { className: "fw-semibold" }, item.regulation_title),
+                          e(
+                            "div",
+                            { className: "small text-muted" },
+                            "Son tarih: ",
+                            item.due_date || "-",
+                            " | Risk: ",
+                            item.risk_level || "-",
+                            " | Etki: ",
+                            item.impact_type || "-"
+                          )
+                        ),
+                        // Sağ buton: tamamlandı yap
+                        e(
+                          "button",
+                          {
+                            type: "button",
+                            className: "btn btn-sm btn-success",
+                            onClick: () => handleToggleObligation(item.obligation_id, true),
+                          },
+                          "Tamamlandı"
+                        )
+                      )
+                    )
+                  )
+            )
+          )
+        ),
+
+        // Sağ: Tamamlananlar
+        e(
+          "div",
+          { className: "col-md-6" },
+          e(
+            "div",
+            { className: "card" },
+            e("div", { className: "card-header fw-semibold" }, "Tamamlanan Yükümlülükler"),
+            e(
+              "div",
+              { className: "card-body" },
+              completed.length === 0
+                ? e("p", { className: "text-muted" }, "Tamamlanan kayıt yok.")
+                : e(
+                    "ul",
+                    { className: "list-group" },
+                    completed.map((item) =>
+                      e(
+                        "li",
+                        {
+                          key: item.obligation_id,
+                          className:
+                            "list-group-item d-flex justify-content-between align-items-start",
+                        },
+                        // Sol içerik: başlık + detay satırı
+                        e(
+                          "div",
+                          null,
+                          e("div", { className: "fw-semibold" }, item.regulation_title),
+                          e(
+                            "div",
+                            { className: "small text-muted" },
+                            "Son tarih: ",
+                            item.due_date || "-",
+                            " | Risk: ",
+                            item.risk_level || "-",
+                            " | Etki: ",
+                            item.impact_type || "-"
+                          )
+                        ),
+                        // Sağ buton: geri al (is_compliant false)
+                        e(
+                          "button",
+                          {
+                            type: "button",
+                            className: "btn btn-sm btn-outline-secondary",
+                            onClick: () => handleToggleObligation(item.obligation_id, false),
+                          },
+                          "Geri al"
+                        )
+                      )
+                    )
+                  )
+            )
+          )
+        )
+      )
+    );
+  }
+
+  // React 18 root oluştur
+  const root = ReactDOM.createRoot(appContainer);
+
+  // DetailApp component'ini #app içine render et
+  root.render(e(DetailApp));
+</script>
+
+</body>
+</html>
